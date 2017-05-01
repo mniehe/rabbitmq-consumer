@@ -6,10 +6,17 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
+  "author": {
+    "name": "Mark Niehe",
+    "email": "mark@niehe.ca"
+  },
+  "license": "CC-BY-NC-4.0",
   "dependencies": {
     "debug": "^2.6.6",
     "uuid": "^3.0.1"
+  },
+  "repository" :{ 
+    "type" : "git", 
+    "url" : "https://github.com/mniehe/rabbitmq-consumer.git"
   }
 }
