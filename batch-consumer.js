@@ -1,6 +1,6 @@
 const uuidV4 = require('uuid/v4');
 const debug = require('debug');
-const logger = debug('consumer');
+const logger = debug('consumer:batch');
 
 /**
  * The process message function that will be passed to BatchConsumer#start().
@@ -37,6 +37,7 @@ class BatchConsumer {
     this._consumerTag = (consumerName === undefined) ? uuidV4() : `${consumerName}:${uuidV4()}`;
     this._processInterval = null;
     this._processFunc = null;
+    this._unackFunc = null;
   }
 
   /**
@@ -44,8 +45,10 @@ class BatchConsumer {
    * 
    * @param {processMessageCallback} func A function that will recieve an array of messages
    * and return a Promise that contains an array of messages to ack.
+   * @param {processMessageCallback} unackFunc A function that will recieve all messages that 
+   * were failed by `func` before acking the message back to RabbitMQ.
    */
-  start(func) {
+  start(func, unackFunc) {
     const options = {
       consumerTag: this._consumerTag,
       noAck: false
@@ -55,7 +58,12 @@ class BatchConsumer {
 
     this.channel.consume(this.queueName, this._receiveMessage.bind(this), options);
     this._processFunc = func;
-    this._processInterval = setInterval(this._consume.bind(this, this._processFunc), this._interval);
+
+    if (unackFunc !== undefined) {
+      this._unackFunc = unackFunc;
+    }
+
+    this._processInterval = setInterval(this._consume.bind(this, this._processFunc, this._unackFunc), this._interval);
   }
 
   /**
@@ -73,7 +81,7 @@ class BatchConsumer {
     clearInterval(this._processInterval);
 
     if (processRemaining && this.queue.length > 0) {
-      this._consume(this._processFunc);
+      this._consume(this._processFunc, this._unackFunc);
     }
 
     logger('Consumer stopped!');
@@ -96,8 +104,9 @@ class BatchConsumer {
    * 
    * @private
    * @param {processMessageCallback} func Function to use when processing messages.
+   * @param {processMessageCallback} unackFunc Function to use when processing failed messages.
    */
-  _consume(func) {
+  _consume(func, unackFunc) {
     const itemCount = (this.queue.length >= this.maxBatch) ? this.maxBatch : this.queue.length;
     const processList = this.queue.splice(0, itemCount);
 
@@ -114,7 +123,14 @@ class BatchConsumer {
           throw new SyntaxError('Return value from consume function is not an array.');
         }
 
-        logger(`Acking ${ackList.length} message(s)!`);
+        const ackTags = ackList.map((message) => message.fields.deliveryTag);
+        const unackList = processList.filter((message) => ackTags.indexOf(message.fields.deliveryTag) < 0);
+
+        logger(`Processed ${ackList.length} message(s) with ${unackList.length} error(s)!`);
+
+        if (unackFunc !== null) {
+          unackFunc(unackList);
+        }
 
         for (const message of ackList) {
           this.channel.ack(message);
