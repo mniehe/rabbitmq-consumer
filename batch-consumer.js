@@ -132,7 +132,7 @@ class BatchConsumer {
           unackFunc(unackList);
         }
 
-        for (const message of ackList) {
+        for (const message of processList) {
           this.channel.ack(message);
         }
       });
